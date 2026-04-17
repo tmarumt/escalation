@@ -1,5 +1,6 @@
 
 #' @importFrom stats rbinom
+#' @importFrom stats runif
 #' @importFrom magrittr %>%
 #' @importFrom utils tail
 phase1_sim <- function(
@@ -9,9 +10,39 @@ phase1_sim <- function(
   sample_patient_arrivals = function(df) cohorts_of_n(n=3, mean_time_delta=1),
   previous_outcomes = '',
   next_dose = NULL,
+  true_prob_g2ae,
   i_like_big_trials = FALSE, # Safety mechanism to avoid infinite trials
   return_all_fits = FALSE
 ) {
+  if (length(true_prob_g2ae) > 0) {
+    atd_dose <- next_dose - 1 + seq_along(true_prob_g2ae)
+    g2ae <- as.integer(runif(length(atd_dose)) < true_prob_g2ae)
+    if (sum(g2ae) == 0) {
+      transit_cohort <- length(atd_dose)
+      dose <- atd_dose
+      tox <- rep(0, transit_cohort)
+      cohort <- seq_along(atd_dose)
+    } else {
+      transit_cohort <- which(g2ae == 1)[1]
+      dose <- atd_dose[1:transit_cohort]
+      tox <- rep(0, transit_cohort)
+      tox[transit_cohort] <- as.integer(runif(1) < (true_prob_tox[transit_cohort] / true_prob_g2ae[transit_cohort]))
+      cohort <- seq_len(transit_cohort)
+    }
+    cohort_size <- nrow(sample_patient_arrivals())
+    if (length(cohort[cohort == transit_cohort]) < cohort_size) {
+      dose <- c(dose, rep(max(dose), cohort_size - 1))
+      tox <- c(tox, as.integer(runif(cohort_size - 1) < true_prob_tox[transit_cohort]))
+      cohort <- c(cohort, rep(max(cohort), cohort_size - 1))
+    }
+    previous_outcomes <- data.frame(
+      dose = dose,
+      tox = tox,
+      cohort = cohort
+    )
+    next_dose <- NULL
+  }
+
   if(is.character(previous_outcomes)) {
     base_df <- parse_phase1_outcomes(previous_outcomes, as_list = FALSE)
   } else if(is.data.frame(previous_outcomes)) {
